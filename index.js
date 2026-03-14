@@ -1,201 +1,123 @@
-require('dotenv').config();
-const express = require('express');
 const { 
-Client, 
-GatewayIntentBits, 
-SlashCommandBuilder, 
-PermissionFlagsBits, 
-Events, 
-ActivityType 
+    Client, 
+    GatewayIntentBits, 
+    PermissionsBitField, 
+    SlashCommandBuilder, 
+    EmbedBuilder, 
+    REST, 
+    Routes 
 } = require('discord.js');
+const express = require('express');
 
+// --- إعداد السيرفر (Port) ليبقى البوت يعمل ---
 const app = express();
-const port = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Bot is Online! ✅'));
+app.listen(3000, () => console.log('Server is ready on port 3000'));
 
-app.get('/', (req, res) => res.send('Bot is Running!'));
-
-app.listen(port, () => {
-console.log(`🌐 السيرفر يعمل على المنفذ: ${port}`);
-});
-
-/* =======================
-   تحقق من التوكن
-======================= */
-
-if (!process.env.TOKEN) {
-console.error("❌ لا يوجد TOKEN في ملف .env");
-process.exit(1);
-}
-
-/* =======================
-   إنشاء البوت
-======================= */
+// --- إعدادات البوت ---
+const TOKEN = 'ضع_توكن_بوتك_هنا';
+const CLIENT_ID = 'ضع_آيدي_بوتك_هنا';
 
 const client = new Client({
-intents: [
-GatewayIntentBits.Guilds,
-GatewayIntentBits.GuildMessages,
-GatewayIntentBits.MessageContent
-]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
-let botSettings = {
-enabled: false,
-channelId: null,
-imageUrl: null
+let startTime = Date.now();
+let botConfig = {
+    enabled: false,
+    channelId: null,
+    imageUrl: null
 };
 
-/* =======================
-   Ready
-======================= */
+// --- تعريف أوامر السلاش ---
+const commands = [
+    new SlashCommandBuilder()
+        .setName('config')
+        .setDescription('إعداد نظام الإرسال التلقائي (للإدارة فقط)')
+        .addBooleanOption(option => 
+            option.setName('تفعيل').setDescription('تفعيل أو إطفاء النظام').setRequired(true))
+        .addChannelOption(option => 
+            option.setName('الروم').setDescription('اختر الروم المراد تفعيله').setRequired(false))
+        .addAttachmentOption(option => 
+            option.setName('صورة').setDescription('ارفع الصورة من الاستوديو').setRequired(false)),
 
-client.once(Events.ClientReady, async (c) => {
+    new SlashCommandBuilder()
+        .setName('uptime')
+        .setDescription('لمعرفة مدة تشغيل البوت')
+].map(command => command.toJSON());
 
-console.log(`✅ تم تسجيل الدخول باسم: ${c.user.tag}`);
+// --- تسجيل الأوامر ---
+const rest = new REST({ version: '10' }).setToken(TOKEN);
+(async () => {
+    try {
+        console.log('جاري تسجيل أوامر السلاش...');
+        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+        console.log('تم تسجيل الأوامr بنجاح!');
+    } catch (error) {
+        console.error(error);
+    }
+})();
 
-client.user.setActivity('by b9r2', {
-type: ActivityType.Watching
+// --- التفاعل مع الأوامر ---
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand()) return;
+
+    // أمر Uptime
+    if (interaction.commandName === 'uptime') {
+        const totalSeconds = Math.floor((Date.now() - startTime) / 1000);
+        const months = Math.floor(totalSeconds / (30 * 24 * 3600));
+        const days = Math.floor((totalSeconds % (30 * 24 * 3600)) / (24 * 3600));
+        const hours = Math.floor((totalSeconds % (24 * 3600)) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        await interaction.reply({
+            content: `⏳ **مدة التشغيل:**\n📅 ${months} شهر، ${days} يوم\n⏰ ${hours} ساعة، ${minutes} دقيقة، ${seconds} ثانية`,
+            ephemeral: true
+        });
+    }
+
+    // أمر Config
+    if (interaction.commandName === 'config') {
+        // التحقق من صلاحية الإدارة
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: '❌ هذا الأمر للإداريين فقط!', ephemeral: true });
+        }
+
+        const status = interaction.options.getBoolean('تفعيل');
+        const channel = interaction.options.getChannel('الروم');
+        const image = interaction.options.getAttachment('صورة');
+
+        botConfig.enabled = status;
+        if (channel) botConfig.channelId = channel.id;
+        if (image) botConfig.imageUrl = image.url;
+
+        await interaction.reply({
+            content: `✅ تم تحديث الإعدادات!\nالحالة: ${status ? 'مفعل' : 'معطل'}\nالروم: <#${botConfig.channelId || 'غير محدد'}>`,
+            ephemeral: true
+        });
+    }
 });
 
-/* =======================
-   الأوامر
-======================= */
+// --- نظام الإرسال التلقائي عند الكتابة ---
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
 
-const settings = new SlashCommandBuilder()
-.setName('settings')
-.setDescription('إعدادات الرد التلقائي')
-.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-.addStringOption(o =>
-o.setName('status')
-.setDescription('تفعيل أو إطفاء')
-.setRequired(true)
-.addChoices(
-{name:'تفعيل',value:'on'},
-{name:'إطفاء',value:'off'}
-))
-.addChannelOption(o =>
-o.setName('channel')
-.setDescription('حدد الروم')
-)
-.addAttachmentOption(o =>
-o.setName('image')
-.setDescription('ارفع صورة')
-);
-
-const uptime = new SlashCommandBuilder()
-.setName('uptime')
-.setDescription('مدة تشغيل البوت');
-
-try {
-
-await client.application.commands.set([
-settings,
-uptime
-]);
-
-console.log("✅ تم تسجيل الأوامر");
-
-} catch (err) {
-
-console.error("❌ فشل تسجيل الأوامر");
-console.error(err);
-
-}
-
+    if (botConfig.enabled && message.channel.id === botConfig.channelId && botConfig.imageUrl) {
+        try {
+            await message.channel.send({ files: [botConfig.imageUrl] });
+        } catch (e) {
+            console.error('Error sending image:', e);
+        }
+    }
 });
 
-/* =======================
-   الرد التلقائي
-======================= */
-
-client.on(Events.MessageCreate, async (msg) => {
-
-if (msg.author.bot) return;
-if (!botSettings.enabled) return;
-if (!botSettings.channelId) return;
-if (!botSettings.imageUrl) return;
-
-if (msg.channel.id !== botSettings.channelId) return;
-
-try {
-
-await msg.reply({
-files: [botSettings.imageUrl]
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}!`);
 });
 
-} catch (err) {
-
-console.error("❌ فشل الرد التلقائي");
-console.error(err);
-
-}
-
-});
-
-/* =======================
-   التفاعل مع الأوامر
-======================= */
-
-client.on(Events.InteractionCreate, async (i) => {
-
-if (!i.isChatInputCommand()) return;
-
-if (i.commandName === "settings") {
-
-const status = i.options.getString("status");
-const channel = i.options.getChannel("channel");
-const image = i.options.getAttachment("image");
-
-botSettings.enabled = status === "on";
-
-if (channel) botSettings.channelId = channel.id;
-if (image) botSettings.imageUrl = image.url;
-
-await i.reply({
-content: "✅ تم تحديث الإعدادات",
-ephemeral: true
-});
-
-}
-
-if (i.commandName === "uptime") {
-
-let seconds = Math.floor(client.uptime / 1000);
-
-let minutes = Math.floor(seconds / 60);
-seconds %= 60;
-
-let hours = Math.floor(minutes / 60);
-minutes %= 60;
-
-let days = Math.floor(hours / 24);
-hours %= 24;
-
-await i.reply({
-content: `🕒 وقت التشغيل: ${days} يوم ${hours} ساعة ${minutes} دقيقة`,
-ephemeral: true
-});
-
-}
-
-});
-
-/* =======================
-   أخطاء
-======================= */
-
-client.on("error", console.error);
-process.on("unhandledRejection", console.error);
-
-/* =======================
-   تسجيل الدخول
-======================= */
-
-client.login(process.env.TOKEN)
-.then(() => {
-console.log("🔐 محاولة تسجيل الدخول...");
-})
-.catch(err => {
-console.error("❌ فشل تسجيل الدخول");
-console.error(err);
-});
+client.login(TOKEN);
