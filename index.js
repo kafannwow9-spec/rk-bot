@@ -1,75 +1,201 @@
 require('dotenv').config();
 const express = require('express');
-const { Client, GatewayIntentBits, SlashCommandBuilder, PermissionFlagsBits, Events, ActivityType } = require('discord.js');
+const { 
+Client, 
+GatewayIntentBits, 
+SlashCommandBuilder, 
+PermissionFlagsBits, 
+Events, 
+ActivityType 
+} = require('discord.js');
 
 const app = express();
 const port = process.env.PORT || 3000;
+
 app.get('/', (req, res) => res.send('Bot is Running!'));
-app.listen(port, () => console.log(`🌐 السيرفر يعمل على المنفذ: ${port}`));
+
+app.listen(port, () => {
+console.log(`🌐 السيرفر يعمل على المنفذ: ${port}`);
+});
+
+/* =======================
+   تحقق من التوكن
+======================= */
+
+if (!process.env.TOKEN) {
+console.error("❌ لا يوجد TOKEN في ملف .env");
+process.exit(1);
+}
+
+/* =======================
+   إنشاء البوت
+======================= */
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-    ],
+intents: [
+GatewayIntentBits.Guilds,
+GatewayIntentBits.GuildMessages,
+GatewayIntentBits.MessageContent
+]
 });
 
-let botSettings = { enabled: false, channelId: null, imageUrl: null };
+let botSettings = {
+enabled: false,
+channelId: null,
+imageUrl: null
+};
+
+/* =======================
+   Ready
+======================= */
 
 client.once(Events.ClientReady, async (c) => {
-    console.log(`✅✅✅ تم تسجيل الدخول بنجاح باسم: ${c.user.tag}`);
-    client.user.setActivity('by b9r2', { type: ActivityType.Watching });
-    
-    const settings = new SlashCommandBuilder()
-        .setName('settings')
-        .setDescription('إعدادات الرد التلقائي')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-        .addStringOption(o => o.setName('status').setDescription('تفعيل/إطفاء').setRequired(true).addChoices({name:'تفعيل',value:'on'},{name:'إطفاء',value:'off'}))
-        .addChannelOption(o => o.setName('channel').setDescription('حدد الروم'))
-        .addAttachmentOption(o => o.setName('image').setDescription('ارفع الصورة'));
 
-    const uptime = new SlashCommandBuilder().setName('uptime').setDescription('مدة التشغيل');
+console.log(`✅ تم تسجيل الدخول باسم: ${c.user.tag}`);
 
-    try {
-        await client.application.commands.set([settings, uptime]);
-        console.log('Successfully registered slash commands');
-    } catch (e) { console.error('Error registering commands:', e); }
+client.user.setActivity('by b9r2', {
+type: ActivityType.Watching
 });
 
-// نظام الرد
-client.on(Events.MessageCreate, async m => {
-    if (m.author.bot || !botSettings.enabled || m.channel.id !== botSettings.channelId || !botSettings.imageUrl) return;
-    try { await m.reply({ files: [botSettings.imageUrl] }); } catch (e) { console.error(e); }
+/* =======================
+   الأوامر
+======================= */
+
+const settings = new SlashCommandBuilder()
+.setName('settings')
+.setDescription('إعدادات الرد التلقائي')
+.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+.addStringOption(o =>
+o.setName('status')
+.setDescription('تفعيل أو إطفاء')
+.setRequired(true)
+.addChoices(
+{name:'تفعيل',value:'on'},
+{name:'إطفاء',value:'off'}
+))
+.addChannelOption(o =>
+o.setName('channel')
+.setDescription('حدد الروم')
+)
+.addAttachmentOption(o =>
+o.setName('image')
+.setDescription('ارفع صورة')
+);
+
+const uptime = new SlashCommandBuilder()
+.setName('uptime')
+.setDescription('مدة تشغيل البوت');
+
+try {
+
+await client.application.commands.set([
+settings,
+uptime
+]);
+
+console.log("✅ تم تسجيل الأوامر");
+
+} catch (err) {
+
+console.error("❌ فشل تسجيل الأوامر");
+console.error(err);
+
+}
+
 });
 
-// التعامل مع الأوامر
-client.on(Events.InteractionCreate, async i => {
-    if (!i.isChatInputCommand()) return;
-    if (i.commandName === 'settings') {
-        botSettings.enabled = i.options.getString('status') === 'on';
-        const ch = i.options.getChannel('channel');
-        const img = i.options.getAttachment('image');
-        if (ch) botSettings.channelId = ch.id;
-        if (img) botSettings.imageUrl = img.url;
-        await i.reply({ content: `✅ تم التحديث!`, ephemeral: true });
-    }
-    if (i.commandName === 'uptime') {
-        let s = Math.floor(client.uptime / 1000);
-        let m = Math.floor(s / 60); s %= 60;
-        let h = Math.floor(m / 60); m %= 60;
-        let d = Math.floor(h / 24); h %= 24;
-        await i.reply({ content: `🕒 وقت التشغيل: ${d} يوم، ${h} ساعة، ${m} دقيقة`, ephemeral: true });
-    }
+/* =======================
+   الرد التلقائي
+======================= */
+
+client.on(Events.MessageCreate, async (msg) => {
+
+if (msg.author.bot) return;
+if (!botSettings.enabled) return;
+if (!botSettings.channelId) return;
+if (!botSettings.imageUrl) return;
+
+if (msg.channel.id !== botSettings.channelId) return;
+
+try {
+
+await msg.reply({
+files: [botSettings.imageUrl]
 });
 
-// فحص التوكن قبل محاولة الدخول
-if (!process.env.TOKEN) {
-    console.error("❌ خطأ قاتل: لم يتم العثور على متغير TOKEN في إعدادات Render!");
-} else {
-    client.login(process.env.TOKEN).catch(err => {
-        console.error("❌ فشل تسجيل الدخول إلى ديسكورد:");
-        console.error(err.message);
-    });
-            }
-                      
+} catch (err) {
+
+console.error("❌ فشل الرد التلقائي");
+console.error(err);
+
+}
+
+});
+
+/* =======================
+   التفاعل مع الأوامر
+======================= */
+
+client.on(Events.InteractionCreate, async (i) => {
+
+if (!i.isChatInputCommand()) return;
+
+if (i.commandName === "settings") {
+
+const status = i.options.getString("status");
+const channel = i.options.getChannel("channel");
+const image = i.options.getAttachment("image");
+
+botSettings.enabled = status === "on";
+
+if (channel) botSettings.channelId = channel.id;
+if (image) botSettings.imageUrl = image.url;
+
+await i.reply({
+content: "✅ تم تحديث الإعدادات",
+ephemeral: true
+});
+
+}
+
+if (i.commandName === "uptime") {
+
+let seconds = Math.floor(client.uptime / 1000);
+
+let minutes = Math.floor(seconds / 60);
+seconds %= 60;
+
+let hours = Math.floor(minutes / 60);
+minutes %= 60;
+
+let days = Math.floor(hours / 24);
+hours %= 24;
+
+await i.reply({
+content: `🕒 وقت التشغيل: ${days} يوم ${hours} ساعة ${minutes} دقيقة`,
+ephemeral: true
+});
+
+}
+
+});
+
+/* =======================
+   أخطاء
+======================= */
+
+client.on("error", console.error);
+process.on("unhandledRejection", console.error);
+
+/* =======================
+   تسجيل الدخول
+======================= */
+
+client.login(process.env.TOKEN)
+.then(() => {
+console.log("🔐 محاولة تسجيل الدخول...");
+})
+.catch(err => {
+console.error("❌ فشل تسجيل الدخول");
+console.error(err);
+});
