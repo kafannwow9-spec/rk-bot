@@ -118,4 +118,6 @@ client.on(Events.MessageCreate, async message => {
     }
 });
 
-client.login(process.env.TOKEN);
+client.login(process.env.TOKEN).catch(err => {
+    console.error("❌ فشل تسجيل الدخول: " + err.message);
+});
