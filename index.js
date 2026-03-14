@@ -1,11 +1,12 @@
 require('dotenv').config();
-const express = require('express'); // إضافة السيرفر
+const express = require('express');
 const { 
     Client, 
     GatewayIntentBits, 
     SlashCommandBuilder, 
     PermissionFlagsBits, 
-    Events 
+    Events,
+    ActivityType // إضافة هذا النوع للتحكم في الحالة
 } = require('discord.js');
 
 // --- إعداد سيرفر الويب لإبقاء البوت حياً ---
@@ -13,7 +14,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-  res.send('✅ البوت شغال وسيرفر الويب متصل!');
+  res.send('✅ البوت شغال والحالة: Watching by b9r2');
 });
 
 app.listen(port, () => {
@@ -37,7 +38,11 @@ let botSettings = {
 
 client.once(Events.ClientReady, async (c) => {
     console.log(`✅ سجلت الدخول باسم ${c.user.tag}`);
+
+    // --- ضبط حالة البوت (Watching by b9r2) ---
+    client.user.setActivity('by b9r2', { type: ActivityType.Watching });
     
+    // تعريف الأوامر
     const settingsCommand = new SlashCommandBuilder()
         .setName('settings')
         .setDescription('إعدادات الرد التلقائي')
@@ -77,7 +82,7 @@ client.on(Events.InteractionCreate, async interaction => {
         if (attachment) botSettings.imageUrl = attachment.url;
 
         await interaction.reply({ 
-            content: `⚙️ **تم التحديث!**\nالحالة: ${botSettings.enabled ? '🟢 مفعل' : '🔴 معطل'}`, 
+            content: `⚙️ **تم تحديث الإعدادات!**\nالحالة: ${botSettings.enabled ? '🟢 مفعل' : '🔴 معطل'}`, 
             ephemeral: true 
         });
     }
@@ -114,4 +119,3 @@ client.on(Events.MessageCreate, async message => {
 });
 
 client.login(process.env.TOKEN);
-          
