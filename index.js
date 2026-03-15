@@ -4,25 +4,19 @@ const {
     PermissionsBitField, 
     SlashCommandBuilder, 
     REST, 
-    Routes 
+    Routes,
+    ActivityType 
 } = require('discord.js');
 const express = require('express');
 
-// --- سيرفر الويب للبقاء حياً ---
+// 1. سيرفر الويب
 const app = express();
 app.get('/', (req, res) => res.send('Bot is Running!'));
-app.listen(3000, () => console.log('✅ Server is ready on port 3000'));
+app.listen(3000, () => console.log('✅ Web Server Online'));
 
-// --- جلب التوكن والآيدي من إعدادات Render ---
-// استخدمنا .trim() لإزالة أي فراغات قد تسبب الخطأ
-const TOKEN = process.env.TOKEN ? process.env.TOKEN.trim() : null;
-const CLIENT_ID = process.env.CLIENT_ID ? process.env.CLIENT_ID.trim() : null;
-
-if (!TOKEN || TOKEN.includes("ضع_") || !CLIENT_ID) {
-    console.error("❌ خطأ قاتل: التوكن أو الآيدي غير موجود أو غير صحيح!");
-    console.error("تأكد من إضافتهم في Environment Variables في Render باسم TOKEN و CLIENT_ID");
-    process.exit(1);
-}
+// 2. جلب التوكن والآيدي
+const TOKEN = process.env.TOKEN?.trim();
+const CLIENT_ID = process.env.CLIENT_ID?.trim();
 
 const client = new Client({
     intents: [
@@ -35,67 +29,88 @@ const client = new Client({
 let startTime = Date.now();
 let botConfig = { enabled: false, channelId: null, imageUrl: null };
 
-// أوامر السلاش
+// 3. تعريف الأوامر (تأكد من الأسماء بالإنجليزية لتجنب المشاكل)
 const commands = [
     new SlashCommandBuilder()
         .setName('config')
-        .setDescription('إعداد النظام')
-        .addBooleanOption(opt => opt.setName('تفعيل').setDescription('تفعيل أو إطفاء').setRequired(true))
-        .addChannelOption(opt => opt.setName('الروم').setDescription('اختر الروم'))
-        .addAttachmentOption(opt => opt.setName('صورة').setDescription('ارفع الصورة')),
+        .setDescription('إعداد نظام الإرسال التلقائي')
+        .addBooleanOption(opt => opt.setName('status').setDescription('تفعيل أو إطفاء').setRequired(true))
+        .addChannelOption(opt => opt.setName('channel').setDescription('اختر الروم'))
+        .addAttachmentOption(opt => opt.setName('image').setDescription('ارفع الصورة')),
     new SlashCommandBuilder()
         .setName('uptime')
-        .setDescription('وقت التشغيل')
+        .setDescription('وقت تشغيل البوت')
 ].map(c => c.toJSON());
 
-// تسجيل الأوامر
-const rest = new REST({ version: '10' }).setToken(TOKEN);
+// 4. حدث تشغيل البوت (Ready)
+client.once('ready', async () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    
+    // وضع حالة "Watching"
+    client.user.setPresence({
+        activities: [{ name: `Messages`, type: ActivityType.Watching }],
+        status: 'online',
+    });
 
-(async () => {
+    // تسجيل الأوامر
+    const rest = new REST({ version: '10' }).setToken(TOKEN);
     try {
-        console.log('⏳ جاري تسجيل أوامر السلاش...');
+        console.log('⏳ جاري تحديث أوامر السلاش...');
         await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('✅ تم تسجيل الأوامر بنجاح!');
+        console.log('✅ تم تحديث الأوامر بنجاح!');
     } catch (error) {
-        console.error('❌ فشل تسجيل الأوامر:', error);
+        console.error('❌ خطأ في تسجيل الأوامر:', error);
     }
-})();
+});
 
-// التفاعل مع الأوامر
+// 5. التفاعل مع الأوامر
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    if (interaction.commandName === 'uptime') {
-        const diff = Math.floor((Date.now() - startTime) / 1000);
-        const days = Math.floor(diff / 86400);
-        const hours = Math.floor((diff % 86400) / 3600);
-        const mins = Math.floor((diff % 3600) / 60);
-        const secs = diff % 60;
-        await interaction.reply({
-            content: `⏳ متصل منذ: ${days} يوم و ${hours} ساعة و ${mins} دقيقة و ${secs} ثانية`,
-            ephemeral: true
-        });
-    }
-
-    if (interaction.commandName === 'config') {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: '❌ للأدمن فقط', ephemeral: true });
+    try {
+        if (interaction.commandName === 'uptime') {
+            const diff = Math.floor((Date.now() - startTime) / 1000);
+            const days = Math.floor(diff / 86400);
+            const hours = Math.floor((diff % 86400) / 3600);
+            const mins = Math.floor((diff % 3600) / 60);
+            const secs = diff % 60;
+            
+            await interaction.reply({
+                content: `⏳ مدة التشغيل:\n${days} يوم، ${hours} ساعة، ${mins} دقيقة، ${secs} ثانية`,
+                ephemeral: true
+            });
         }
-        botConfig.enabled = interaction.options.getBoolean('تفعيل');
-        const channel = interaction.options.getChannel('الروم');
-        const image = interaction.options.getAttachment('صورة');
-        if (channel) botConfig.channelId = channel.id;
-        if (image) botConfig.imageUrl = image.url;
-        await interaction.reply({ content: `✅ تم التحديث! الحالة: ${botConfig.enabled ? 'مفعل' : 'معطل'}`, ephemeral: true });
+
+        if (interaction.commandName === 'config') {
+            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                return interaction.reply({ content: '❌ للأدمن فقط', ephemeral: true });
+            }
+
+            const status = interaction.options.getBoolean('status');
+            const channel = interaction.options.getChannel('channel');
+            const image = interaction.options.getAttachment('image');
+
+            botConfig.enabled = status;
+            if (channel) botConfig.channelId = channel.id;
+            if (image) botConfig.imageUrl = image.url;
+
+            await interaction.reply({
+                content: `⚙️ **تم التحديث:**\nالحالة: ${status ? '✅ مفعل' : '❌ معطل'}\nالروم: <#${botConfig.channelId || 'غير محدد'}>\nالصورة: ${botConfig.imageUrl ? '✅ تم الحفظ' : '⚠️ لا توجد صورة'}`,
+                ephemeral: true
+            });
+        }
+    } catch (error) {
+        console.error(error);
+        await interaction.reply({ content: '❌ حدث خطأ أثناء تنفيذ الأمر', ephemeral: true }).catch(() => {});
     }
 });
 
-// الإرسال التلقائي
+// 6. الإرسال التلقائي
 client.on('messageCreate', async msg => {
-    if (msg.author.bot) return;
-    if (botConfig.enabled && msg.channel.id === botConfig.channelId && botConfig.imageUrl) {
-        msg.channel.send({ files: [botConfig.imageUrl] }).catch(() => {});
+    if (msg.author.bot || !botConfig.enabled) return;
+    if (msg.channel.id === botConfig.channelId && botConfig.imageUrl) {
+        msg.channel.send({ files: [botConfig.imageUrl] }).catch(err => console.log("خطأ في إرسال الصورة:", err));
     }
 });
 
-client.login(TOKEN).catch(err => console.error("❌ فشل تسجيل الدخول:", err));
+client.login(TOKEN);
